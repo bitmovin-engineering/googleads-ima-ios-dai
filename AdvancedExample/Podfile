@@ -1,8 +1,10 @@
-source 'https://github.com/CocoaPods/Specs.git'
+source 'https://cdn.cocoapods.org'
+source 'https://github.com/Bitmovin/cocoapod-specs'
 
-platform :ios, '12'
+platform :ios, '14'
 
 target "AdvancedExample" do
   pod 'GoogleAds-IMA-iOS-SDK', '~> 3.18.4'
   pod 'google-cast-sdk-no-bluetooth', '~>4.4.3'
+  pod 'BitmovinPlayer', '3.53.0'
 end

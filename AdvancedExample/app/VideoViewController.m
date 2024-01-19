@@ -3,7 +3,10 @@
 #import "Video.h"
 
 #import <AVFoundation/AVFoundation.h>
+#import <AdvancedExample-Swift.h>
 
+@import BitmovinPlayerCore;
+@import BitmovinPlayer;
 @import GoogleCast;
 @import GoogleInteractiveMediaAds;
 
@@ -18,7 +21,7 @@ typedef NS_ENUM(NSInteger, PlayButtonType) {
   PauseButton  ///< Pause button is shown.
 };
 
-@interface VideoViewController () <IMAAdsLoaderDelegate, IMAStreamManagerDelegate>
+@interface VideoViewController () <IMAAdsLoaderDelegate, IMAStreamManagerDelegate, BMPPlayerListener>
 
 /// Tracking for play/pause.
 @property(nonatomic, assign) BOOL adPlaying;
@@ -54,12 +57,12 @@ typedef NS_ENUM(NSInteger, PlayButtonType) {
 @property(nonatomic, strong) UITapGestureRecognizer *videoTapRecognizer;
 
 // Content player handles.
-@property(nonatomic, strong) AVPlayer *contentPlayer;
+@property(nonatomic, strong) id<BMPPlayer> contentPlayer;
 @property(nonatomic, strong) AVPlayerLayer *contentPlayerLayer;
 @property(nonatomic, strong) id<NSObject> playHeadObserver;
 
 // IMA objects
-@property(nonatomic, strong) IMAAVPlayerVideoDisplay *IMAVideoDisplay;
+@property(nonatomic, strong) BitmovinVideoDisplay *IMAVideoDisplay;
 @property(nonatomic, strong) IMAStreamManager *streamManager;
 
 // Maintains seeking status for snapback.
@@ -142,10 +145,10 @@ typedef NS_ENUM(NSInteger, PlayButtonType) {
     if (self.castManager.playbackMode == PlaybackModeLocal ||
         self.video.streamType == StreamTypeLive) {
       NSTimeInterval contentTime = [self.streamManager
-          contentTimeForStreamTime:CMTimeGetSeconds(self.contentPlayer.currentTime)];
+          contentTimeForStreamTime:self.contentPlayer.currentTime];
       [self.delegate videoViewController:self didReportSavedTime:contentTime forVideo:self.video];
     }
-    // Only remove AVPlayer tracking if we added it already.
+
     if (self.trackingContent) {
       [self removeContentPlayerObservers];
     }
@@ -158,7 +161,9 @@ typedef NS_ENUM(NSInteger, PlayButtonType) {
 }
 
 - (void)setUpContentPlayer {
-  self.contentPlayer = [[AVPlayer alloc] init];
+    BMPPlayerConfig *playerConfig = [BMPPlayerConfig new];
+    playerConfig.key = <#@"ENTER YOUR LICENSE KEY"#>; // TODO ENTER YOUR LICENSE KEY
+    self.contentPlayer = [BMPPlayerFactory createWithPlayerConfig:playerConfig];
 
   // Set up fullscreen tap listener to show controls.
   self.videoTapRecognizer =
@@ -167,7 +172,9 @@ typedef NS_ENUM(NSInteger, PlayButtonType) {
   [self.videoView addGestureRecognizer:self.videoTapRecognizer];
 
   // Create a player layer for the player.
-  self.contentPlayerLayer = [AVPlayerLayer playerLayerWithPlayer:self.contentPlayer];
+  self.contentPlayerLayer = [AVPlayerLayer new];
+
+    [self.contentPlayer registerPlayerLayer:self.contentPlayerLayer];
 
   // Size, position, and display the AVPlayer.
   self.contentPlayerLayer.frame = self.videoView.layer.bounds;
@@ -175,43 +182,13 @@ typedef NS_ENUM(NSInteger, PlayButtonType) {
 }
 
 - (void)addContentPlayerObservers {
+    [self.contentPlayer addPlayerListener:self];
   self.trackingContent = YES;
-  // Playhead observers for progress bar.
-  __weak VideoViewController *controller = self;
-  self.playHeadObserver = [controller.contentPlayer
-      addPeriodicTimeObserverForInterval:CMTimeMake(1, 30)
-                                   queue:NULL
-                              usingBlock:^(CMTime time) {
-                                CMTime duration = [controller
-                                    getPlayerItemDuration:controller.contentPlayer.currentItem];
-                                [controller updatePlayHeadWithTime:time duration:duration];
-                              }];
-  [self.contentPlayer addObserver:self forKeyPath:@"rate" options:0 context:@"contentPlayerRate"];
-  [self.contentPlayer addObserver:self
-                       forKeyPath:@"currentItem.duration"
-                          options:0
-                          context:@"playerDuration"];
 }
 
 - (void)removeContentPlayerObservers {
   self.trackingContent = NO;
-  [self.contentPlayer removeTimeObserver:self.playHeadObserver];
-  [self.contentPlayer removeObserver:self forKeyPath:@"rate"];
-  [self.contentPlayer removeObserver:self forKeyPath:@"currentItem.duration"];
-}
-
-// Handler for keypath listener that is added for content playhead observer.
-- (void)observeValueForKeyPath:(NSString *)keyPath
-                      ofObject:(id)object
-                        change:(NSDictionary *)change
-                       context:(void *)context {
-  if (context == @"contentPlayerRate" && self.contentPlayer == object) {
-    self.streamPlaying = self.contentPlayer.rate != 0;
-    [self updatePlayHeadState:self.streamPlaying];
-  } else if (context == @"playerDuration" && self.contentPlayer == object) {
-    [self
-        updatePlayHeadDurationWithTime:[self getPlayerItemDuration:self.contentPlayer.currentItem]];
-  }
+    [self.contentPlayer removePlayerListener:self];
 }
 
 #pragma mark UI handlers
@@ -249,7 +226,7 @@ typedef NS_ENUM(NSInteger, PlayButtonType) {
     UISlider *slider = (UISlider *)sender;
     // If the playhead value changed by the user, skip to that point of the
     // content is skippable.
-    [self.contentPlayer seekToTime:CMTimeMake(slider.value, 1)];
+    [self.IMAVideoDisplay seekStreamToTime:slider.value];
   }
 }
 
@@ -287,7 +264,7 @@ typedef NS_ENUM(NSInteger, PlayButtonType) {
 
 // Update the current playhead duration.
 - (void)updatePlayHeadDurationWithTime:(CMTime)duration {
-  if (CMTIME_IS_INVALID(duration)) {
+  if (CMTIME_IS_INVALID(duration) || CMTIME_IS_INDEFINITE(duration)) {
     return;
   }
   Float64 durationValue = CMTimeGetSeconds(duration);
@@ -359,7 +336,7 @@ typedef NS_ENUM(NSInteger, PlayButtonType) {
                                                object:self];
 
     self.currentlySeeking = YES;
-    self.seekStartTime = self.contentPlayer.currentTime;
+    self.seekStartTime = CMTimeMakeWithSeconds(self.contentPlayer.currentTime, NSEC_PER_SEC);
   }
 }
 
@@ -377,8 +354,7 @@ typedef NS_ENUM(NSInteger, PlayButtonType) {
         self.snapbackMode = YES;
         // Add 1 to the seek time to get the keyframe at the start of the ad to be our landing
         // place.
-        [self.contentPlayer
-            seekToTime:CMTimeMakeWithSeconds(lastCuepoint.startTime + 1, NSEC_PER_SEC)];
+        [self.IMAVideoDisplay seekStreamToTime:lastCuepoint.startTime + 1];
       }
     }
   } else if (self.castManager.playbackMode == PlaybackModeRemote) {
@@ -408,19 +384,20 @@ typedef NS_ENUM(NSInteger, PlayButtonType) {
 }
 
 - (void)showSubtitles {
-  AVAsset *asset = self.contentPlayer.currentItem.asset;
-  AVMediaSelectionGroup *legibleGroup =
-      [asset mediaSelectionGroupForMediaCharacteristic:AVMediaCharacteristicLegible];
-  NSArray *characteristics =
-      [NSArray arrayWithObject:AVMediaCharacteristicContainsOnlyForcedSubtitles];
-  NSArray *filteredOptions =
-      [AVMediaSelectionGroup mediaSelectionOptionsFromArray:legibleGroup.options
-                                withoutMediaCharacteristics:characteristics];
-  if (filteredOptions && filteredOptions.count) {
-    // Select the first subtitle track.
-    [self.contentPlayer.currentItem selectMediaOption:[filteredOptions objectAtIndex:0]
-                                inMediaSelectionGroup:legibleGroup];
-  }
+    // TODO add subtitles support
+//  AVAsset *asset = self.contentPlayer.currentItem.asset;
+//  AVMediaSelectionGroup *legibleGroup =
+//      [asset mediaSelectionGroupForMediaCharacteristic:AVMediaCharacteristicLegible];
+//  NSArray *characteristics =
+//      [NSArray arrayWithObject:AVMediaCharacteristicContainsOnlyForcedSubtitles];
+//  NSArray *filteredOptions =
+//      [AVMediaSelectionGroup mediaSelectionOptionsFromArray:legibleGroup.options
+//                                withoutMediaCharacteristics:characteristics];
+//  if (filteredOptions && filteredOptions.count) {
+//    // Select the first subtitle track.
+//    [self.contentPlayer.currentItem selectMediaOption:[filteredOptions objectAtIndex:0]
+//                                inMediaSelectionGroup:legibleGroup];
+//  }
 }
 
 #pragma mark IMA methods
@@ -433,7 +410,7 @@ typedef NS_ENUM(NSInteger, PlayButtonType) {
                                           viewController:self
                                           companionSlots:nil];
   // Create an IMAAVPlayerVideoDisplay to give the SDK access to your video player.
-  self.IMAVideoDisplay = [[IMAAVPlayerVideoDisplay alloc] initWithAVPlayer:self.contentPlayer];
+    self.IMAVideoDisplay = [[BitmovinVideoDisplay alloc] initWithPlayer:self.contentPlayer];
   // Create a stream request.
   IMAStreamRequest *request;
   if (self.video.streamType == StreamTypeLive) {
@@ -474,7 +451,8 @@ typedef NS_ENUM(NSInteger, PlayButtonType) {
         adErrorData.adError.message);
   // Load AVPlayer with path to our backup content and play it.
   NSURL *contentURL = [NSURL URLWithString:IMATestAppContentUrl_M3U8];
-  self.contentPlayer = [AVPlayer playerWithURL:contentURL];
+    BMPSourceConfig *sourceConfig = [[BMPSourceConfig alloc] initWithUrl:contentURL type:BMPSourceTypeHls];
+    [self.contentPlayer loadSourceConfig:sourceConfig];
   [self addContentPlayerObservers];
   [self.contentPlayer play];
 }
@@ -509,8 +487,8 @@ typedef NS_ENUM(NSInteger, PlayButtonType) {
       self.adPlaying = NO;
       if (self.snapbackMode) {
         self.snapbackMode = NO;
-        if (CMTimeCompare(self.seekEndTime, self.contentPlayer.currentTime)) {
-          [self.contentPlayer seekToTime:self.seekEndTime];
+        if (CMTimeGetSeconds(self.seekEndTime) != self.contentPlayer.currentTime) {
+          [self.IMAVideoDisplay seekStreamToTime:CMTimeGetSeconds(self.seekEndTime)];
         }
       }
       break;
@@ -551,7 +529,8 @@ typedef NS_ENUM(NSInteger, PlayButtonType) {
   // Load AVPlayer with path to our backup content and play it.
   NSURL *contentURL = [NSURL URLWithString:IMATestAppContentUrl_M3U8];
   [self removeContentPlayerObservers];
-  self.contentPlayer = [AVPlayer playerWithURL:contentURL];
+      BMPSourceConfig *sourceConfig = [[BMPSourceConfig alloc] initWithUrl:contentURL type:BMPSourceTypeHls];
+      [self.contentPlayer loadSourceConfig:sourceConfig];
   [self addContentPlayerObservers];
   [self.contentPlayer play];
 }
@@ -568,8 +547,7 @@ typedef NS_ENUM(NSInteger, PlayButtonType) {
 
 - (NSTimeInterval)getContentTime {
   if (self.streamManager) {
-    return [self.streamManager
-        contentTimeForStreamTime:CMTimeGetSeconds(self.contentPlayer.currentTime)];
+    return [self.streamManager contentTimeForStreamTime:self.contentPlayer.currentTime];
   } else {
     return 0;
   }
@@ -588,7 +566,7 @@ typedef NS_ENUM(NSInteger, PlayButtonType) {
 
   if (self.video.streamType == StreamTypeLive) {
     if (self.localStreamRequested) {
-      [self.contentPlayer seekToTime:CMTimeMakeWithSeconds(MAXFLOAT, NSEC_PER_SEC)];
+        self.contentPlayer.timeShift = 0;
       [self.contentPlayer play];
     } else {
       [self requestStream];
@@ -602,7 +580,7 @@ typedef NS_ENUM(NSInteger, PlayButtonType) {
   } else if (self.localStreamRequested) {
     NSTimeInterval timeToSeek =
         [self.streamManager streamTimeForContentTime:self.castManager.castContentTime];
-    [self.contentPlayer seekToTime:CMTimeMakeWithSeconds(timeToSeek, NSEC_PER_SEC)];
+    [self.contentPlayer seek:timeToSeek];
     [self.contentPlayer play];
   } else {
     self.video.savedTime = self.castManager.castContentTime;
@@ -626,6 +604,30 @@ typedef NS_ENUM(NSInteger, PlayButtonType) {
     NSRange bottom = NSMakeRange(self.consoleView.text.length - 1, 1);
     [self.consoleView scrollRangeToVisible:bottom];
   }
+}
+
+#pragma mark Bitmovin player listener
+
+- (void)onTimeChanged:(BMPTimeChangedEvent *)event player:(id<BMPPlayer>)player {
+    [self updatePlayHeadWithTime:CMTimeMakeWithSeconds(player.currentTime, NSEC_PER_SEC) duration:CMTimeMakeWithSeconds(player.duration, NSEC_PER_SEC)];
+}
+
+- (void)onSourceLoaded:(BMPSourceLoadedEvent *)event player:(id<BMPPlayer>)player {
+    [self updatePlayHeadDurationWithTime:CMTimeMakeWithSeconds(player.duration, NSEC_PER_SEC)];
+}
+
+- (void)onSourceUnloaded:(BMPSourceUnloadedEvent *)event player:(id<BMPPlayer>)player {
+    [self updatePlayHeadDurationWithTime:CMTimeMakeWithSeconds(NAN, NSEC_PER_SEC)];
+}
+
+- (void)onPlaying:(BMPPlayingEvent *)event player:(id<BMPPlayer>)player {
+    self.streamPlaying = self.contentPlayer.isPlaying;
+    [self updatePlayHeadState:self.streamPlaying];
+}
+
+- (void)onPaused:(BMPPausedEvent *)event player:(id<BMPPlayer>)player {
+    self.streamPlaying = self.contentPlayer.isPlaying;
+    [self updatePlayHeadState:self.streamPlaying];
 }
 
 @end

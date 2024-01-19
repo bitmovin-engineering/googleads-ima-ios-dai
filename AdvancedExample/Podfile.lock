@@ -1,0 +1,48 @@
+PODS:
+  - BitmovinAnalyticsCollector/BitmovinPlayer (3.4.0):
+    - BitmovinAnalyticsCollector/Core
+    - BitmovinPlayerCore (~> 3.48)
+  - BitmovinAnalyticsCollector/Core (3.4.0)
+  - BitmovinPlayer (3.53.0):
+    - BitmovinAnalyticsCollector/BitmovinPlayer (~> 3.0)
+    - BitmovinPlayerCore (= 3.53.0)
+  - BitmovinPlayerCore (3.53.0)
+  - google-cast-sdk-no-bluetooth (4.4.8):
+    - google-cast-sdk-no-bluetooth/Core (= 4.4.8)
+    - GTMSessionFetcher/Core (~> 1.0)
+    - Protobuf (~> 3.12)
+  - google-cast-sdk-no-bluetooth/Core (4.4.8):
+    - GTMSessionFetcher/Core (~> 1.0)
+    - Protobuf (~> 3.12)
+  - GoogleAds-IMA-iOS-SDK (3.18.5)
+  - GTMSessionFetcher/Core (1.7.2)
+  - Protobuf (3.25.2)
+
+DEPENDENCIES:
+  - BitmovinPlayer (= 3.53.0)
+  - google-cast-sdk-no-bluetooth (~> 4.4.3)
+  - GoogleAds-IMA-iOS-SDK (~> 3.18.4)
+
+SPEC REPOS:
+  https://github.com/bitmovin/cocoapod-specs.git:
+    - BitmovinAnalyticsCollector
+    - BitmovinPlayer
+    - BitmovinPlayerCore
+  trunk:
+    - google-cast-sdk-no-bluetooth
+    - GoogleAds-IMA-iOS-SDK
+    - GTMSessionFetcher
+    - Protobuf
+
+SPEC CHECKSUMS:
+  BitmovinAnalyticsCollector: cd3a393e831fba539ea88a37ba164cca0c03f180
+  BitmovinPlayer: a6c0c0fbf0c3a738db727f48b51026bb873d9d26
+  BitmovinPlayerCore: 183a2f2b9b8f021e679835e8441da9aeafc64aa1
+  google-cast-sdk-no-bluetooth: d5a60530c72b0907fb302d835952b6cb0ba5f128
+  GoogleAds-IMA-iOS-SDK: 7dbef0755db43698f2f6a3a7ac51a88571945399
+  GTMSessionFetcher: 5595ec75acf5be50814f81e9189490412bad82ba
+  Protobuf: 34db13339da0d02d64fa8a2ac6a124cfcc603703
+
+PODFILE CHECKSUM: c94db8be7c6227065b58272d68b6638077a82d7c
+
+COCOAPODS: 1.14.2
